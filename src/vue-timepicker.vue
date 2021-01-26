@@ -18,6 +18,7 @@ const DEFAULT_OPTIONS = {
   hideDisabledMinutes: false,
   hideDisabledSeconds: false,
   hideDisabledItems: false,
+  advancedKeyboard: false,
   hideDropdown: false,
   blurDelay: 300,
   manualInputTimeout: 1000,
@@ -69,7 +70,6 @@ export default {
     dropDirection: { type: String, default: 'down' },
     dropOffsetHeight: { type: [ Number, String ] },
     containerId: { type: String },
-    appendToBody: { type: Boolean, default: false },
 
     manualInput: { type: Boolean, default: false },
     manualInputTimeout: { type: [ Number, String ] },
@@ -953,17 +953,9 @@ export default {
       }
     },
 
-    getFullData () {
-      if (!this.fullValues) {
-        this.fillValues()
-      }
-      return {
-        data: JSON.parse(JSON.stringify(this.fullValues)),
-        displayTime: this.inputIsEmpty ? '' : String(this.displayTime)
-      }
-    },
-
     emitTimeValue () {
+      if (!this.fullValues) { return }
+
       if (this.lazy && this.bakDisplayTime === this.displayTime) {
         if (this.debugMode) {
           this.debugLog('The value does not change on `lazy` mode. Skip the emitting `input` and `change` event.')
@@ -971,12 +963,11 @@ export default {
         return
       }
 
-      const fullData = this.getFullData()
+      const fullValues = JSON.parse(JSON.stringify(this.fullValues))
 
       if (this.useStringValue) {
-        this.$emit('input', fullData.displayTime)
+        this.$emit('input', this.inputIsEmpty ? '' : String(this.displayTime))
       } else {
-        const fullValues = fullData.data
         const tokensInUse = this.inUse.tokens || []
         const timeValue = {}
         tokensInUse.forEach((token) => {
@@ -985,7 +976,10 @@ export default {
         this.$emit('input', JSON.parse(JSON.stringify(timeValue)))
       }
 
-      this.$emit('change', fullData)
+      this.$emit('change', {
+        data: fullValues,
+        displayTime: this.inputIsEmpty ? '' : String(this.displayTime)
+      })
     },
 
     translate12hRange (value) {
@@ -1144,7 +1138,7 @@ export default {
         if (this.showDropdown) {
           this.setDropdownState(false)
         } else if (this.manualInput) {
-          this.$emit('blur', this.getFullData())
+          this.$emit('blur')
         }
         this.isFocusing = false
         if (this.lazy) {
@@ -1163,9 +1157,6 @@ export default {
 
     setDropdownState (toShow, fromUserClick = false) {
       if (toShow) {
-        if (this.appendToBody) {
-          this.appendDropdownToBody()
-        }
         this.keepFocusing()
         if (this.autoDirectionEnabled) {
           this.checkDropDirection()
@@ -1176,66 +1167,19 @@ export default {
           if (this.fixedDropdownButton) {
             this.isActive = true
           }
-          this.$emit('blur', this.getFullData())
+          this.$emit('blur')
           this.checkForAutoScroll()
         }
       } else {
         this.showDropdown = false
-        this.$emit('close', this.getFullData())
-        if (this.appendToBody) {
-          this.removeDropdownFromBody()
-        }
+        this.$emit('close')
       }
-    },
-
-    appendDropdownToBody () {
-      const dropdown = this.$refs && this.$refs.dropdown
-      const body = document.getElementsByTagName('body')[0]
-      if (body && dropdown) {
-        window.addEventListener('scroll', this.updateDropdownPos)
-        dropdown.classList.add('vue__time-picker-dropdown')
-        this.updateDropdownPos()
-        body.appendChild(dropdown)
-      }
-    },
-
-    updateDropdownPos () {
-      if (!this.appendToBody) { return }
-      const dropdown = this.$refs && this.$refs.dropdown
-      const body = document.getElementsByTagName('body')[0]
-      if (body && dropdown) {
-        const box = this.$el.getBoundingClientRect()
-        if (this.dropdownDirClass === 'drop-up') {
-          dropdown.style.bottom = `${window.innerHeight - box.y}px`
-          dropdown.style.top = 'auto'
-        } else {
-          dropdown.style.top = `${box.y + box.height}px`
-          dropdown.style.bottom = 'auto'
-        }
-        dropdown.style.left = `${box.x}px`
-      }
-    },
-
-    removeDropdownFromBody () {
-      const dropdown = this.$refs && this.$refs.dropdown
-      const body = document.getElementsByTagName('body')[0]
-      if (body && dropdown && body.contains(dropdown)) {
-        body.removeChild(dropdown)
-      }
-      if (dropdown) {
-        dropdown.classList.remove('vue__time-picker-dropdown')
-        dropdown.style.top = ''
-        dropdown.style.bottom = ''
-        dropdown.style.left = ''
-        this.$el.appendChild(dropdown)
-      }
-      window.removeEventListener('scroll', this.updateDropdownPos)
     },
 
     blurEvent () {
       if (this.manualInput && !this.opts.hideDropdown) {
         // hideDropdown's `blur` event is handled somewhere else
-        this.$emit('blur', this.getFullData())
+        this.$emit('blur')
       }
     },
 
@@ -1285,12 +1229,7 @@ export default {
 
     scrollToSelected (column, allowFallback = false) {
       if (!this.timeValue || this.inputIsEmpty) { return }
-      let targetList
-      if (this.appendToBody && this.$refs && this.$refs.dropdown) {
-        targetList = this.$refs.dropdown.querySelectorAll(`ul.${column}s`)[0]
-      } else {
-        targetList = this.$el.querySelectorAll(`ul.${column}s`)[0]
-      }
+      const targetList = this.$el.querySelectorAll(`ul.${column}s`)[0]
       let targetValue = this.activeItemInCol(column)[0]
       if (!targetValue && allowFallback) {
         // No value selected in the target column, fallback to the first found valid item
@@ -1307,6 +1246,7 @@ export default {
     scrollToSelectedValues () {
       if (!this.timeValue || this.inputIsEmpty) { return }
       this.inUse.types.forEach(section => {
+          console.log(section)
         this.scrollToSelected(section)
       })
     },
@@ -1323,6 +1263,7 @@ export default {
       if (!this.isActive) {
         this.toggleActive()
       }
+      this.checkForAutoScroll()
     },
 
     escBlur () {
@@ -1359,35 +1300,13 @@ export default {
       }
     },
 
-    onTab (column, value, evt) {
-      if (this.appendToBody && evt.shiftKey) {
-        const firstColumn = this.inUse.types[0]
-        if (column !== firstColumn) { return }
-        const firstValidValue = this.validItemsInCol(firstColumn)[0]
-        // Is the first valid item in the first column
-        if (firstValidValue && firstValidValue.getAttribute('data-key') === String(value)) {
-          evt.preventDefault()
-          // Focus back on <input>
-          if (this.$refs && this.$refs.input) {
-            this.$refs.input.focus()
-          }
-        }
-      }
-    },
-
     validItemsInCol (column) {
       const columnClass = `${column}s`
-      if (this.appendToBody && this.$refs && this.$refs.dropdown) {
-        return this.$refs.dropdown.querySelectorAll(`ul.${columnClass} > li:not(.hint):not([disabled])`)
-      }
       return this.$el.querySelectorAll(`ul.${columnClass} > li:not(.hint):not([disabled])`)
     },
 
     activeItemInCol (column) {
       const columnClass = `${column}s`
-      if (this.appendToBody && this.$refs && this.$refs.dropdown) {
-        return this.$refs.dropdown.querySelectorAll(`ul.${columnClass} > li.active:not(.hint)`)
-      }
       return this.$el.querySelectorAll(`ul.${columnClass} > li.active:not(.hint)`)
     },
 
@@ -1523,15 +1442,11 @@ export default {
       } else if (evt.keyCode === 9) {
         this.clearKbInputLog()
         this.tabHandler(evt)
-      // Colon|Space
-      } else if (evt.keyCode === 186 || evt.keyCode === 32) {
-        evt.preventDefault()
-        this.clearKbInputLog()
-        this.toNextSlot()
       // Prevent any Non-ESC and non-pasting inputs
       } else if (evt.keyCode !== 27 && !(evt.metaKey || evt.ctrlKey)) {
         evt.preventDefault()
       }
+      this.checkForAutoScroll()
     },
 
     onCompostionStart (evt) {
@@ -1614,7 +1529,7 @@ export default {
       }
     },
 
-    tabHandler (evt) {
+    tabHandler (evt) {      
       if (!this.inputIsEmpty && this.tokenChunksPos && this.tokenChunksPos.length) {
         const currentChunk = this.getCurrentTokenChunk()
         if (!currentChunk) { return }
@@ -1623,16 +1538,6 @@ export default {
         if ((evt.shiftKey && currentChunk.token !== firstChunk.token) || (!evt.shiftKey && currentChunk.token !== lastChunk.token)) {
           evt.preventDefault()
           this.toLateralToken(evt.shiftKey)
-        }
-      } else if (this.appendToBody && this.advancedKeyboard) {
-        if (evt.shiftKey) { return }
-        evt.preventDefault()
-        if (this.inputIsEmpty) {
-          const firstColumn = this.inUse.types[0]
-          const targetValue = this.validItemsInCol(firstColumn)[0]
-          if (targetValue) {
-            targetValue.focus()
-          }
         }
       }
     },
@@ -1705,7 +1610,10 @@ export default {
       const autoFillValue = this.$refs.input.value || ''
       if (autoFillValue && autoFillValue.length) {
         this.readStringValues(autoFillValue)
+        this.checkForAutoScroll()
+
       }
+
     },
 
     getNearestChunkByPos (startPos) {
@@ -1830,17 +1738,6 @@ export default {
     selectFirstSlot () {
       const firstChunkPos = this.getNearestChunkByPos(0)
       this.debounceSetInputSelection(firstChunkPos)
-    },
-
-    toNextSlot () {
-      if (!this.inputIsEmpty && this.tokenChunksPos && this.tokenChunksPos.length) {
-        const currentChunk = this.getCurrentTokenChunk()
-        if (!currentChunk) { return }
-        const lastChunk = this.tokenChunksPos[this.tokenChunksPos.length - 1]
-        if (currentChunk.token !== lastChunk.token) {
-          this.toLateralToken(false)
-        }
-      }
     },
 
     toLateralToken (toLeft) {
@@ -2033,6 +1930,7 @@ export default {
     window.clearTimeout(this.selectionTimer)
     window.clearTimeout(this.kbInputTimer)
     this.renderFormat()
+    this.checkForAutoScroll()
   },
 
   beforeDestroy () {
@@ -2080,7 +1978,7 @@ export default {
   </div>
   <div class="custom-icon" v-if="$slots && $slots.icon"><slot name="icon"></slot></div>
   <div class="time-picker-overlay" v-if="showDropdown" @click="toggleActive" tabindex="-1"></div>
-  <div class="dropdown" ref="dropdown" v-show="showDropdown" tabindex="-1"
+  <div class="dropdown" v-show="showDropdown" tabindex="-1"
        :class="[dropdownDirClass]" :style="inputWidthStyle"
        @mouseup="keepFocusing" @click.stop="">
     <div class="select-list" :style="inputWidthStyle" tabindex="-1">
@@ -2155,7 +2053,6 @@ export default {
                   :disabled="isDisabled('hour', hr)"
                   v-text="hr"
                   @click="select('hour', hr)"
-                  @keydown.tab="onTab('hour', hr, $event)"
                   @keydown.space.prevent="select('hour', hr)"
                   @keydown.enter.prevent="select('hour', hr)"
                   @keydown.up.prevent="prevItem('hour', hr)"
@@ -2178,7 +2075,6 @@ export default {
                   :disabled="isDisabled('minute', m)"
                   v-text="m"
                   @click="select('minute', m)"
-                  @keydown.tab="onTab('minute', m, $event)"
                   @keydown.space.prevent="select('minute', m)"
                   @keydown.enter.prevent="select('minute', m)"
                   @keydown.up.prevent="prevItem('minute', m)"
@@ -2201,7 +2097,6 @@ export default {
                   :disabled="isDisabled('second', s)"
                   v-text="s"
                   @click="select('second', s)"
-                  @keydown.tab="onTab('second', s, $event)"
                   @keydown.space.prevent="select('second', s)"
                   @keydown.enter.prevent="select('second', s)"
                   @keydown.up.prevent="prevItem('second', s)"
@@ -2224,7 +2119,6 @@ export default {
                   :disabled="isDisabled('apm', a)"
                   v-text="apmDisplayText(a)"
                   @click="select('apm', a)"
-                  @keydown.tab="onTab('apm', a, $event)"
                   @keydown.space.prevent="select('apm', a)"
                   @keydown.enter.prevent="select('apm', a)"
                   @keydown.up.prevent="prevItem('apm', a)"
@@ -2372,8 +2266,7 @@ export default {
   bottom: 0;
 }
 
-.vue__time-picker .dropdown,
-.vue__time-picker-dropdown {
+.vue__time-picker .dropdown {
   position: absolute;
   z-index: 5;
   top: calc(2.2em + 2px);
@@ -2385,20 +2278,12 @@ export default {
   font-weight: normal;
 }
 
-/* Dropdown class when "append-to-body" is on */
-.vue__time-picker-dropdown {
-  position: fixed;
-  z-index: 100;
-}
-
-.vue__time-picker .dropdown.drop-up,
-.vue__time-picker-dropdown.drop-up {
+.vue__time-picker .dropdown.drop-up {
   top: auto;
   bottom: calc(2.2em + 1px);
 }
 
-.vue__time-picker .dropdown .select-list,
-.vue__time-picker-dropdown .select-list {
+.vue__time-picker .dropdown .select-list {
   width: 10em;
   height: 10em;
   overflow: hidden;
@@ -2409,14 +2294,11 @@ export default {
 }
 
 .vue__time-picker .dropdown .select-list:focus,
-.vue__time-picker .dropdown .select-list:active,
-.vue__time-picker-dropdown .select-list:focus,
-.vue__time-picker-dropdown .select-list:active {
+.vue__time-picker .dropdown .select-list:active {
   outline: 0;
 }
 
-.vue__time-picker .dropdown ul,
-.vue__time-picker-dropdown ul {
+.vue__time-picker .dropdown ul {
   padding: 0;
   margin: 0;
   list-style: none;
@@ -2429,15 +2311,11 @@ export default {
 
 .vue__time-picker .dropdown ul.minutes,
 .vue__time-picker .dropdown ul.seconds,
-.vue__time-picker .dropdown ul.apms,
-.vue__time-picker-dropdown ul.minutes,
-.vue__time-picker-dropdown ul.seconds,
-.vue__time-picker-dropdown ul.apms {
+.vue__time-picker .dropdown ul.apms{
   border-left: 1px solid #fff;
 }
 
-.vue__time-picker .dropdown ul li,
-.vue__time-picker-dropdown ul li {
+.vue__time-picker .dropdown ul li {
   list-style: none;
   text-align: center;
   padding: 0.3em 0;
@@ -2445,9 +2323,7 @@ export default {
 }
 
 .vue__time-picker .dropdown ul li:not(.hint):not([disabled]):hover,
-.vue__time-picker .dropdown ul li:not(.hint):not([disabled]):focus,
-.vue__time-picker-dropdown ul li:not(.hint):not([disabled]):hover,
-.vue__time-picker-dropdown ul li:not(.hint):not([disabled]):focus  {
+.vue__time-picker .dropdown ul li:not(.hint):not([disabled]):focus {
   background: rgba(0,0,0,.08);
   color: #161616;
   cursor: pointer;
@@ -2455,25 +2331,19 @@ export default {
 
 .vue__time-picker .dropdown ul li:not([disabled]).active,
 .vue__time-picker .dropdown ul li:not([disabled]).active:hover,
-.vue__time-picker .dropdown ul li:not([disabled]).active:focus,
-.vue__time-picker-dropdown ul li:not([disabled]).active,
-.vue__time-picker-dropdown ul li:not([disabled]).active:hover,
-.vue__time-picker-dropdown ul li:not([disabled]).active:focus {
+.vue__time-picker .dropdown ul li:not([disabled]).active:focus {
   background: #41B883;
   color: #fff;
 }
 
 .vue__time-picker .dropdown ul li[disabled],
-.vue__time-picker .dropdown ul li[disabled]:hover,
-.vue__time-picker-dropdown ul li[disabled],
-.vue__time-picker-dropdown ul li[disabled]:hover {
+.vue__time-picker .dropdown ul li[disabled]:hover {
   background: transparent;
   opacity: 0.3;
   cursor: not-allowed;
 }
 
-.vue__time-picker .dropdown .hint,
-.vue__time-picker-dropdown .hint {
+.vue__time-picker .dropdown .hint {
   color: #a5a5a5;
   cursor: default;
   font-size: 0.8em;
