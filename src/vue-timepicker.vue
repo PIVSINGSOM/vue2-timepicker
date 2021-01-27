@@ -2305,7 +2305,7 @@ export default {
   outline: 0;
 
   flex: 1 1 0.00001px;
-  overflow-x: hidden;
+  overflow-x: auto;
   overflow-y: auto;
 }
 
